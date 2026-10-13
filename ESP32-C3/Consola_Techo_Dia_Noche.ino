@@ -145,17 +145,54 @@ const char *obtenerDireccion(float grados) {
 }
 
 // ---------- Gota simplificada para 428 x 142 ----------
+void lineaGotaGruesa(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
+                      uint16_t color) {
+  // Tres trazos paralelos para simular un contorno en negrita.
+  gfx->drawLine(x1, y1, x2, y2, color);
+  gfx->drawLine(x1 + 1, y1, x2 + 1, y2, color);
+  gfx->drawLine(x1, y1 + 1, x2, y2 + 1, color);
+}
+
 void dibujarGota(int16_t x, int16_t y, uint16_t color) {
-  // Icono de contorno sencillo, pensado para pocos píxeles.
-  gfx->drawLine(x + 10, y,      x + 3,  y + 10, color);
-  gfx->drawLine(x + 3,  y + 10, x + 1,  y + 15, color);
-  gfx->drawLine(x + 1,  y + 15, x + 3,  y + 20, color);
-  gfx->drawLine(x + 3,  y + 20, x + 7,  y + 23, color);
-  gfx->drawLine(x + 7,  y + 23, x + 12, y + 23, color);
-  gfx->drawLine(x + 12, y + 23, x + 17, y + 20, color);
-  gfx->drawLine(x + 17, y + 20, x + 19, y + 15, color);
-  gfx->drawLine(x + 19, y + 15, x + 17, y + 10, color);
-  gfx->drawLine(x + 17, y + 10, x + 10, y, color);
+  // Contorno reforzado para mejorar la legibilidad en la pantalla pequeña.
+  lineaGotaGruesa(x + 10, y,      x + 3,  y + 10, color);
+  lineaGotaGruesa(x + 3,  y + 10, x + 1,  y + 15, color);
+  lineaGotaGruesa(x + 1,  y + 15, x + 3,  y + 20, color);
+  lineaGotaGruesa(x + 3,  y + 20, x + 7,  y + 23, color);
+  lineaGotaGruesa(x + 7,  y + 23, x + 12, y + 23, color);
+  lineaGotaGruesa(x + 12, y + 23, x + 17, y + 20, color);
+  lineaGotaGruesa(x + 17, y + 20, x + 19, y + 15, color);
+  lineaGotaGruesa(x + 19, y + 15, x + 17, y + 10, color);
+  lineaGotaGruesa(x + 17, y + 10, x + 10, y, color);
+}
+
+// ---------- Título con líneas laterales ----------
+void dibujarTituloConLineas(const char *texto, int16_t centroX, int16_t baseline,
+                            int16_t limiteIzquierdo, int16_t limiteDerecho,
+                            uint16_t color) {
+  gfx->setFont(&FreeSans9pt7b);
+  gfx->setTextColor(color);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+  gfx->getTextBounds(texto, 0, baseline, &x1, &y1, &w, &h);
+  int16_t textoIzquierdo = centroX - (w / 2);
+  int16_t textoDerecho = textoIzquierdo + w;
+  int16_t yLinea = baseline - 7;
+  const int16_t separacion = 5;
+
+  // La línea se dibuja a ambos lados y queda visualmente interrumpida por el título.
+  if (textoIzquierdo - separacion > limiteIzquierdo) {
+    gfx->drawLine(limiteIzquierdo, yLinea,
+                  textoIzquierdo - separacion, yLinea, color);
+  }
+  if (textoDerecho + separacion < limiteDerecho) {
+    gfx->drawLine(textoDerecho + separacion, yLinea,
+                  limiteDerecho, yLinea, color);
+  }
+
+  gfx->setCursor(textoIzquierdo, baseline);
+  gfx->print(texto);
 }
 
 // ---------- Bloque exterior/interior ----------
@@ -277,6 +314,11 @@ void dibujarInterfaz() {
   // Separadores verticales
   gfx->drawLine(142, 19, 142, 123, p.acento);
   gfx->drawLine(286, 19, 286, 123, p.acento);
+
+  // Títulos con línea horizontal interrumpida por el propio texto,
+  // como en el diseño de referencia.
+  dibujarTituloConLineas("EXTERIOR", EXT_X, 33, 10, 134, p.acento);
+  dibujarTituloConLineas("INTERIOR", INT_X, 33, 294, 418, p.acento);
 
   dibujarBloqueTemperatura(EXT_X, tempExterior, humedadExterior, "EXTERIOR");
   dibujarBloqueTemperatura(INT_X, tempInterior, humedadInterior, "INTERIOR");

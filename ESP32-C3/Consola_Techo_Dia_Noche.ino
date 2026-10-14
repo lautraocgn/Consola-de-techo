@@ -200,8 +200,7 @@ void dibujarBloqueTemperatura(int16_t centroX, float temperatura,
                               int humedad, const char *etiqueta) {
   const Paleta &p = paletaActual();
 
-  // Título
-  textoCentrado(etiqueta, centroX, 33, &FreeSans9pt7b, p.acento);
+  // El título pertenece al fondo estático y no se redibuja en cada actualización.
 
   // Temperatura dominante
   char valor[12];
@@ -308,22 +307,33 @@ void dibujarBrujula(float grados) {
 }
 
 // ---------- Interfaz ----------
+void dibujarDatosDinamicos() {
+  const Paleta &p = paletaActual();
+
+  // Limpiar solo las zonas de datos, sin tocar títulos ni separadores.
+  gfx->fillRect(EXT_X - 66, 40, 132, 88, p.fondo);
+  gfx->fillRect(INT_X - 66, 40, 132, 88, p.fondo);
+
+  dibujarBloqueTemperatura(EXT_X, tempExterior, humedadExterior, "EXTERIOR");
+  dibujarBloqueTemperatura(INT_X, tempInterior, humedadInterior, "INTERIOR");
+
+  // La brújula se restaura completa dentro de su propia región para borrar
+  // limpiamente la aguja anterior sin dejar restos ni borrar otras zonas.
+  gfx->fillRect(COMPASS_X - 43, 13, 86, 115, p.fondo);
+  dibujarBrujula(rumbo);
+}
+
 void dibujarInterfaz() {
   const Paleta &p = paletaActual();
   gfx->fillScreen(p.fondo);
 
-  // Separadores verticales
+  // Elementos estáticos: solo se dibujan al iniciar o cambiar de tema.
   gfx->drawLine(142, 19, 142, 123, p.acento);
   gfx->drawLine(286, 19, 286, 123, p.acento);
-
-  // Títulos con línea horizontal interrumpida por el propio texto,
-  // como en el diseño de referencia.
   dibujarTituloConLineas("EXTERIOR", EXT_X, 33, 10, 134, p.acento);
   dibujarTituloConLineas("INTERIOR", INT_X, 33, 294, 418, p.acento);
 
-  dibujarBloqueTemperatura(EXT_X, tempExterior, humedadExterior, "EXTERIOR");
-  dibujarBloqueTemperatura(INT_X, tempInterior, humedadInterior, "INTERIOR");
-  dibujarBrujula(rumbo);
+  dibujarDatosDinamicos();
 }
 
 // ---------- BLE: conexión ----------
@@ -495,7 +505,7 @@ void loop() {
     rumbo += 5.0;
     if (rumbo >= 360.0) rumbo -= 360.0;
 
-    dibujarInterfaz();
+    dibujarDatosDinamicos();
 
     if (deviceConnected) {
       char buffer[64];

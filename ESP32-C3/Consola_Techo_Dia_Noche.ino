@@ -83,7 +83,7 @@ enum TemaPantalla { TEMA_DIA, TEMA_NOCHE };
 TemaPantalla temaActual = TEMA_DIA;
 
 // Niveles de brillo de pantalla: 50 %, 75 %, 100 %.
-const uint8_t nivelesBrillo[] = {128, 191, 255};
+const uint8_t nivelesBrillo[] = {64, 128, 255};
 const uint8_t NUM_NIVELES_BRILLO = sizeof(nivelesBrillo) / sizeof(nivelesBrillo[0]);
 uint8_t indiceBrillo = 1; // Arranca al 75 %
 
@@ -218,29 +218,30 @@ void dibujarBloqueTemperatura(int16_t centroX, float temperatura,
   gfx->drawCircle(xGrado, 55, 2, p.texto);
 
   // Humedad: gota + porcentaje + HUM
-  dibujarGota(centroX - 57, 96, p.humedad);
+  dibujarGota(centroX - 60, 96, p.humedad);
 
   char porcentaje[8];
   snprintf(porcentaje, sizeof(porcentaje), "%d%%", humedad);
-  textoCentrado(porcentaje, centroX + 1, 119, &FreeSansBold12pt7b, p.humedad);
+  textoCentrado(porcentaje, centroX - 10, 119, &FreeSansBold12pt7b, p.humedad);
 
-  textoCentrado("HUM", centroX + 48, 119, &FreeSans9pt7b, p.humedad);
+  textoCentrado("Hum", centroX + 38, 119, &FreeSans9pt7b, p.humedad);
 }
 
 // ---------- Brújula circular con puntos cardinales ----------
 void dibujarBrujula(float grados) {
   const Paleta &p = paletaActual();
   const int16_t cx = COMPASS_X;
-  const int16_t cy = 48;
-  const int16_t radio = 29;
+  const int16_t cy = 55;
+  const int16_t radio = 39;
 
   // Círculo y marcas
   gfx->drawCircle(cx, cy, radio, p.acento);
-  for (int i = 0; i < 32; i++) {
-    float aMarca = i * 11.25f * PI / 180.0f;
+  gfx->drawCircle(cx, cy, 40, p.acento);
+  for (int i = 0; i < 16; i++) {
+    float aMarca = i * 22.5f * PI / 180.0f;
     bool principal = (i % 4 == 0);
-    int16_t r1 = principal ? 23 : 26;
-    int16_t r2 = radio - 1;
+    int16_t r1 = principal ? 32 : 34;
+    int16_t r2 = radio - 2;
     int16_t x1 = cx + (int16_t)round(r1 * sin(aMarca));
     int16_t y1 = cy - (int16_t)round(r1 * cos(aMarca));
     int16_t x2 = cx + (int16_t)round(r2 * sin(aMarca));
@@ -249,14 +250,14 @@ void dibujarBrujula(float grados) {
   }
 
   // Cardinales colocados dentro del aro
-  textoCentrado("N",  cx,      24, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("NE", cx + 19, 36, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("E",  cx + 23, 54, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("SE", cx + 19, 72, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("S",  cx,      83, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("SO", cx - 19, 72, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("O",  cx - 23, 54, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("NO", cx - 19, 36, &FreeSansBold9pt7b, p.texto);
+  textoCentrado("N",  cx,      31, &FreeSansBold9pt7b, p.texto);
+  textoCentrado("NE", cx + 19, 43, &FreeSans9pt7b, p.texto);
+  textoCentrado("E",  cx + 30, 61, &FreeSansBold9pt7b, p.texto);
+  textoCentrado("SE", cx + 19, 79, &FreeSans9pt7b, p.texto);
+  textoCentrado("S",  cx,      90, &FreeSansBold9pt7b, p.texto);
+  textoCentrado("SO", cx - 19, 79, &FreeSans9pt7b, p.texto);
+  textoCentrado("O",  cx - 30, 61, &FreeSansBold9pt7b, p.texto);
+  textoCentrado("NO", cx - 19, 43, &FreeSans9pt7b, p.texto);
 
   // Aguja orientada al rumbo
   float a = grados * PI / 180.0f;
@@ -265,8 +266,8 @@ void dibujarBrujula(float grados) {
   float px = -dy;
   float py = dx;
 
-  const float largoPunta = 21.0f;
-  const float largoCola = 15.0f;
+  const float largoPunta = 28.0f;
+  const float largoCola = 20.0f;
   const float ancho = 3.8f;
 
   int16_t puntaX = cx + (int16_t)round(largoPunta * dx);
@@ -295,15 +296,15 @@ void dibujarBrujula(float grados) {
   snprintf(gradosTexto, sizeof(gradosTexto), "%03d", ((int)round(grados) % 360 + 360) % 360);
   char lectura[10];
   snprintf(lectura, sizeof(lectura), "%s", gradosTexto);
-  textoCentrado(lectura, cx, 119, &FreeSansBold12pt7b, p.acento);
+  textoCentrado(lectura, cx, 119, &FreeSans12pt7b, p.acento);
 
   // Símbolo de grados
   int16_t bx, by;
   uint16_t bw, bh;
   gfx->setFont(&FreeSansBold12pt7b);
   gfx->getTextBounds(lectura, 0, 0, &bx, &by, &bw, &bh);
-  int16_t xGrados = cx + bw / 2 + 4;
-  gfx->drawCircle(xGrados, 108, 2, p.acento);
+  int16_t xGrados = cx + bw / 2 + 6;
+  gfx->drawCircle(xGrados, 104, 2, p.acento);
 }
 
 // ---------- Interfaz ----------

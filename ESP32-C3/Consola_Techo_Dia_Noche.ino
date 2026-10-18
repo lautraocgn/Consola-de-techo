@@ -12,7 +12,7 @@
 #include <math.h>
 
 // ==================================================
-// CONSOLA DE TECHO - ESP32-C3 ZERO
+// CONSOLA DE TECHO - ESP32-C3 ZERO - v1.4 Arcos dinámicos
 // Pantalla NV3007: 428 x 142; zona útil aproximada: y=10..131
 // Fondo estático bitmap; tema cambia el color de los datos dinámicos
 // Pulsador: pulsación corta = brillo; larga = cambiar tema
@@ -199,12 +199,136 @@ void dibujarAguja(float grados) {
   gfx->drawCircle(cx, cy, 4, p.texto);
 }
 
+// ---------- Barras dinámicas de temperatura y humedad ----------
+// Coordenadas referidas a la pantalla de 428x142: el bitmap de 428x122
+// se dibuja en y=10, por lo que los centros de los círculos quedan en y=71.
+const int16_t CENTRO_ARCO_Y = 71;
+const int16_t RADIO_ARCO_TEMP = 57;  // pista exterior: temperatura
+const int16_t RADIO_ARCO_HUM  = 49;  // pista interior: humedad
+const int16_t GROSOR_ARCO = 4;
+const int16_t RADIO_BOLITA = 4;
+
+uint16_t colorRGB565(uint8_t r, uint8_t g, uint8_t b) {
+  return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
+uint8_t mezclarCanal(uint8_t a, uint8_t b, float t) {
+  if (t < 0.0f) t = 0.0f;
+  if (t > 1.0f) t = 1.0f;
+  return (uint8_t)roundf(a + (b - a) * t);
+}
+
+// Degradado con amarillo saturado para que no se vea blanco en la TFT pequeña.
+uint16_t colorTemperatura(float proporcion) {
+  if (proporcion < 0.0f) proporcion = 0.0f;
+  if (proporcion > 1.0f) proporcion = 1.0f;
+
+  // Azul intenso -> celeste -> amarillo vivo -> naranja -> rojo.
+  const uint8_t azul[3]     = {0, 105, 255};
+  const uint8_t celeste[3]  = {0, 205, 255};
+  const uint8_t amarillo[3] = {255, 230, 0};
+  const uint8_t naranja[3]  = {255, 105, 0};
+  const uint8_t rojo[3]     = {245, 20, 8};
+
+  const uint8_t *a;
+  const uint8_t *b;
+  float t;
+  if (proporcion < 0.25f) {
+    a = azul; b = celeste; t = proporcion / 0.25f;
+  } else if (proporcion < 0.52f) {
+    a = celeste; b = amarillo; t = (proporcion - 0.25f) / 0.27f;
+  } else if (proporcion < 0.76f) {
+    a = amarillo; b = naranja; t = (proporcion - 0.52f) / 0.24f;
+  } else {
+    a = naranja; b = rojo; t = (proporcion - 0.76f) / 0.24f;
+  }
+  return colorRGB565(mezclarCanal(a[0], b[0], t),
+                     mezclarCanal(a[1], b[1], t),
+                     mezclarCanal(a[2], b[2], t));
+}
+
+// Humedad: azul oscuro a baja intensidad, azul vivo al subir el porcentaje.
+uint16_t colorHumedad(int humedad) {
+  if (humedad < 0) humedad = 0;
+  if (humedad > 100) humedad = 100;
+  float intensidad = 0.10f + 0.90f * (humedad / 100.0f);
+  uint8_t r = 0;
+  uint8_t g = (uint8_t)roundf(45.0f * intensidad);
+  uint8_t b = (uint8_t)roundf(255.0f * intensidad);
+  return colorRGB565(r, g, b);
+}
+
+void dibujarArco(int16_t centroX, int16_t centroY, int16_t radio,
+                 float anguloInicio, float barrido, uint16_t color,
+                 bool dibujarBolitaFinal, bool degradadoTemperatura = false) {
+  if (barrido <= 0.0f) return;
+  if (barrido > 360.0f) barrido = 360.0f;
+
+  // Segmentos cortos para aproximar el arco; nunca se dibuja una vuelta completa
+  // salvo que el valor alcance el 100 % de su escala.
+  const float paso = 2.0f;
+  float anguloAnterior = anguloInicio;
+  int16_t xAnterior = centroX + (int16_t)roundf(radio * cosf(anguloAnterior * PI / 180.0f));
+  int16_t yAnterior = centroY + (int16_t)roundf(radio * sinf(anguloAnterior * PI / 180.0f));
+  for (float recorrido = paso; recorrido < barrido; recorrido += paso) {
+    float angulo = anguloInicio + recorrido;
+    int16_t x = centroX + (int16_t)roundf(radio * cosf(angulo * PI / 180.0f));
+    int16_t y = centroY + (int16_t)roundf(radio * sinf(angulo * PI / 180.0f));
+    uint16_t colorSegmento = degradadoTemperatura
+      ? colorTemperatura(recorrido / 360.0f) : color;
+    gfx->drawLine(xAnterior, yAnterior, x, y, colorSegmento);
+    // El grosor se completa con círculos pequeños a lo largo del trazo.
+    gfx->fillCircle(x, y, GROSOR_ARCO / 2, colorSegmento);
+    xAnterior = x;
+    yAnterior = y;
+    anguloAnterior = angulo;
+  }
+
+  float anguloFinal = anguloInicio + barrido;
+  int16_t xFinal = centroX + (int16_t)roundf(radio * cosf(anguloFinal * PI / 180.0f));
+  int16_t yFinal = centroY + (int16_t)roundf(radio * sinf(anguloFinal * PI / 180.0f));
+  uint16_t colorFinal = degradadoTemperatura
+    ? colorTemperatura(barrido / 360.0f) : color;
+  gfx->drawLine(xAnterior, yAnterior, xFinal, yFinal, colorFinal);
+  gfx->fillCircle(xFinal, yFinal, GROSOR_ARCO / 2, colorFinal);
+
+  if (dibujarBolitaFinal) {
+    gfx->fillCircle(xFinal, yFinal, RADIO_BOLITA, colorFinal);
+  }
+}
+
+void dibujarBarrasIndicadores() {
+  // Temperatura: escala -10..50 °C; inicio a las 9 h y avance horario.
+  float proporcionTempExt = (tempExterior + 10.0f) / 60.0f;
+  float proporcionTempInt = (tempInterior + 10.0f) / 60.0f;
+  if (proporcionTempExt < 0.0f) proporcionTempExt = 0.0f;
+  if (proporcionTempExt > 1.0f) proporcionTempExt = 1.0f;
+  if (proporcionTempInt < 0.0f) proporcionTempInt = 0.0f;
+  if (proporcionTempInt > 1.0f) proporcionTempInt = 1.0f;
+
+  // Humedad: escala 0..100 %; inicio a las 3 h y avance horario.
+  int humExt = constrain(humedadExterior, 0, 100);
+  int humInt = constrain(humedadInterior, 0, 100);
+
+  // Las dos magnitudes usan radios distintos para que sus trazos nunca se unan,
+  // incluso cuando sus recorridos angulares se solapan.
+  dibujarArco(EXT_X, CENTRO_ARCO_Y, RADIO_ARCO_TEMP, 180.0f,
+              proporcionTempExt * 360.0f, colorTemperatura(proporcionTempExt), true, true);
+  dibujarArco(INT_X, CENTRO_ARCO_Y, RADIO_ARCO_TEMP, 180.0f,
+              proporcionTempInt * 360.0f, colorTemperatura(proporcionTempInt), true, true);
+
+  dibujarArco(EXT_X, CENTRO_ARCO_Y, RADIO_ARCO_HUM, 0.0f,
+              humExt * 3.6f, colorHumedad(humExt), true);
+  dibujarArco(INT_X, CENTRO_ARCO_Y, RADIO_ARCO_HUM, 0.0f,
+              humInt * 3.6f, colorHumedad(humInt), true);
+}
+
 // ---------- Interfaz ----------
 // Se repinta el bitmap antes de dibujar los valores para borrar las lecturas
 // anteriores y evitar restos al cambiar temperatura, humedad o rumbo.
 void dibujarInterfaz() {
   gfx->draw16bitRGBBitmap(
-    0, 0,
+    0, 10,
     fondo,
     FONDO_WIDTH,
     FONDO_HEIGHT
@@ -216,6 +340,7 @@ void dibujarInterfaz() {
   dibujarHumedad(EXT_X, humedadExterior, true);
   dibujarHumedad(INT_X, humedadInterior, false);
 
+  dibujarBarrasIndicadores();
   dibujarAguja(rumbo);
 }
 

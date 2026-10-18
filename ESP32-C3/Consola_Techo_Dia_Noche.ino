@@ -1,13 +1,9 @@
 #include <Arduino_GFX_Library.h>
 #include <Adafruit_GFX.h>
-#include <Fonts/FreeSansBold9pt7b.h>
-#include <Fonts/FreeSans9pt7b.h>
-#include <Fonts/FreeSansBold12pt7b.h>
-#include <Fonts/FreeSans12pt7b.h>
+#include "fondo_v6.h" // Version con diseño de las circunferencias de las temperaturas más pequeñas que la brujula.
 #include <Fonts/FreeSansBold18pt7b.h>
-#include <Fonts/FreeSans18pt7b.h>
-#include <Fonts/FreeSansBold24pt7b.h>
-#include <Fonts/FreeSans24pt7b.h>
+#include <Fonts/FreeSansBold12pt7b.h>
+#include <Fonts/FreeSansBold9pt7b.h>
 #include <Adafruit_NeoPixel.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -18,7 +14,7 @@
 // ==================================================
 // CONSOLA DE TECHO - ESP32-C3 ZERO
 // Pantalla NV3007: 428 x 142; zona útil aproximada: y=10..131
-// Dos temas: día (claro) y noche (oscuro)
+// Fondo estático bitmap; tema cambia el color de los datos dinámicos
 // Pulsador: pulsación corta = brillo; larga = cambiar tema
 // ==================================================
 
@@ -64,11 +60,10 @@ Arduino_GFX *gfx = new Arduino_NV3007(
 );
 
 // ---------- Coordenadas ----------
-const int16_t TOP = 10;
-const int16_t BOTTOM = 131;
-const int16_t EXT_X = 72;
+const int16_t EXT_X = 87;
 const int16_t COMPASS_X = 214;
-const int16_t INT_X = 356;
+const int16_t COMPASS_Y = 71;
+const int16_t INT_X = 341;
 
 // ---------- Datos de prueba (todavía simulados) ----------
 float tempExterior = 18.2;
@@ -89,28 +84,24 @@ uint8_t indiceBrillo = 1; // Arranca al 75 %
 
 // Colores RGB565 por tema
 struct Paleta {
-  uint16_t fondo;
   uint16_t texto;
-  uint16_t acento;
   uint16_t humedad;
   uint16_t aguja;
   uint16_t agujaSecundaria;
 };
 
+// El bitmap es oscuro en ambos modos. El tema cambia el color de los datos
+// superpuestos, sin alterar el fondo aprobado.
 const Paleta PALETA_DIA = {
-  0xFFFF, // blanco
-  0x1082, // negro azulado
-  0x055D, // azul
-  0x055D, // gota y humedad
+  0xFFFF, // datos blancos
+  0xFFFF, // humedad blanca
   0xF800, // punta roja
   0x7BEF  // cola gris
 };
 
 const Paleta PALETA_NOCHE = {
-  0x0000, // negro
-  0xFFFF, // blanco
-  0x07FF, // cian
-  0x07FF, // gota y humedad
+  0x07FF, // datos cian
+  0x07FF, // humedad cian
   0xF800, // punta roja
   0xBDF7  // cola gris claro
 };
@@ -119,156 +110,71 @@ const Paleta &paletaActual() {
   return (temaActual == TEMA_DIA) ? PALETA_DIA : PALETA_NOCHE;
 }
 
-// ---------- Texto centrado con FreeFonts ----------
-void textoCentrado(const char *texto, int16_t centroX, int16_t y,
-                   const GFXfont *fuente, uint16_t color) {
-  gfx->setFont(fuente);
-  gfx->setTextColor(color);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-  gfx->getTextBounds(texto, 0, 0, &x1, &y1, &w, &h);
-  gfx->setCursor(centroX - (w / 2), y);
-  gfx->print(texto);
-}
-
-// ---------- Dirección cardinal ----------
-const char *obtenerDireccion(float grados) {
-  if (grados >= 337.5 || grados < 22.5) return "N";
-  if (grados < 67.5)  return "NE";
-  if (grados < 112.5) return "E";
-  if (grados < 157.5) return "SE";
-  if (grados < 202.5) return "S";
-  if (grados < 247.5) return "SO";
-  if (grados < 292.5) return "O";
-  return "NO";
-}
-
-// ---------- Gota simplificada para 428 x 142 ----------
-void lineaGotaGruesa(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
-                      uint16_t color) {
-  // Tres trazos paralelos para simular un contorno en negrita.
-  gfx->drawLine(x1, y1, x2, y2, color);
-  gfx->drawLine(x1 + 1, y1, x2 + 1, y2, color);
-  gfx->drawLine(x1, y1 + 1, x2, y2 + 1, color);
-}
-
-void dibujarGota(int16_t x, int16_t y, uint16_t color) {
-  // Contorno reforzado para mejorar la legibilidad en la pantalla pequeña.
-  lineaGotaGruesa(x + 10, y,      x + 3,  y + 10, color);
-  lineaGotaGruesa(x + 3,  y + 10, x + 1,  y + 15, color);
-  lineaGotaGruesa(x + 1,  y + 15, x + 3,  y + 20, color);
-  lineaGotaGruesa(x + 3,  y + 20, x + 7,  y + 23, color);
-  lineaGotaGruesa(x + 7,  y + 23, x + 12, y + 23, color);
-  lineaGotaGruesa(x + 12, y + 23, x + 17, y + 20, color);
-  lineaGotaGruesa(x + 17, y + 20, x + 19, y + 15, color);
-  lineaGotaGruesa(x + 19, y + 15, x + 17, y + 10, color);
-  lineaGotaGruesa(x + 17, y + 10, x + 10, y, color);
-}
-
-// ---------- Título con líneas laterales ----------
-void dibujarTituloConLineas(const char *texto, int16_t centroX, int16_t baseline,
-                            int16_t limiteIzquierdo, int16_t limiteDerecho,
-                            uint16_t color) {
-  gfx->setFont(&FreeSans9pt7b);
-  gfx->setTextColor(color);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-  gfx->getTextBounds(texto, 0, baseline, &x1, &y1, &w, &h);
-  int16_t textoIzquierdo = centroX - (w / 2);
-  int16_t textoDerecho = textoIzquierdo + w;
-  int16_t yLinea = baseline - 7;
-  const int16_t separacion = 5;
-
-  // La línea se dibuja a ambos lados y queda visualmente interrumpida por el título.
-  if (textoIzquierdo - separacion > limiteIzquierdo) {
-    gfx->drawLine(limiteIzquierdo, yLinea,
-                  textoIzquierdo - separacion, yLinea, color);
-  }
-  if (textoDerecho + separacion < limiteDerecho) {
-    gfx->drawLine(textoDerecho + separacion, yLinea,
-                  limiteDerecho, yLinea, color);
-  }
-
-  gfx->setCursor(textoIzquierdo, baseline);
-  gfx->print(texto);
-}
-
-// ---------- Bloque exterior/interior ----------
-void dibujarBloqueTemperatura(int16_t centroX, float temperatura,
-                              int humedad, const char *etiqueta) {
+// ---------- Datos dinámicos sobre el bitmap ----------
+// El bitmap ya contiene títulos, círculos, líneas, gota, etiquetas,
+// marcas y números cardinales. Aquí solo se dibujan las lecturas variables.
+void dibujarTemperatura(int16_t centroX, float temperatura, int16_t ajusteGrado) {
   const Paleta &p = paletaActual();
 
-  // Título
-  textoCentrado(etiqueta, centroX, 33, &FreeSans9pt7b, p.acento);
-
-  // Temperatura dominante
   char valor[12];
   snprintf(valor, sizeof(valor), "%.1f", temperatura);
-  textoCentrado(valor, centroX - 6, 85, &FreeSansBold24pt7b, p.texto);
 
-  // Símbolo de grados calculado según el ancho real de la fuente
+  gfx->setFont(&FreeSansBold12pt7b);
+  gfx->setTextColor(p.texto);
+
   int16_t x1, y1;
   uint16_t w, h;
-  gfx->setFont(&FreeSansBold24pt7b);
   gfx->getTextBounds(valor, 0, 0, &x1, &y1, &w, &h);
-  int16_t xGrado = centroX - 6 + (w / 2) + 10;
-  gfx->drawCircle(xGrado, 55, 3, p.texto);
-  gfx->drawCircle(xGrado, 55, 2, p.texto);
 
-  // Humedad: gota + porcentaje + HUM
-  dibujarGota(centroX - 60, 96, p.humedad);
+  // Centrar el número junto con el símbolo de grados.
+  const int16_t anchoGrado = 7;
+  int16_t xTexto = centroX - (int16_t)(w + anchoGrado) / 2;
+  gfx->setCursor(xTexto, 72); // posicion de los numeros de la temperatura enY
+  gfx->print(valor);
+
+  // Símbolo de grados dibujado para evitar problemas de codificación.
+  ///int16_t ajusteGrado = exterior ? 5 : -2;
+  int16_t xGrado = xTexto + w + 3 + ajusteGrado;
+
+  gfx->drawCircle(xGrado, 60, 1, p.texto); // 60 es la posicion en Y, 1 es el tipo de circunferencia
+  gfx->drawCircle(xGrado, 60, 2, p.texto); // idem
+}
+
+void dibujarHumedad(int16_t centroX, int humedad, bool exterior) {
+  const Paleta &p = paletaActual();
 
   char porcentaje[8];
   snprintf(porcentaje, sizeof(porcentaje), "%d%%", humedad);
-  textoCentrado(porcentaje, centroX - 10, 119, &FreeSansBold12pt7b, p.humedad);
 
-  textoCentrado("Hum", centroX + 38, 119, &FreeSans9pt7b, p.humedad);
+  gfx->setFont(&FreeSansBold9pt7b);
+  gfx->setTextColor(p.humedad);
+
+  // El porcentaje queda al lado de la gota: a la derecha en exterior
+  // y a la izquierda en interior, manteniendo la composición simétrica.
+  int16_t centroPorcentaje = exterior ? centroX + 10 : centroX + 9; // los dos valores de cenrtoX mueven los numeros de la humedad en X
+  int16_t x1, y1;
+  uint16_t w, h;
+  gfx->getTextBounds(porcentaje, 0, 0, &x1, &y1, &w, &h);
+  gfx->setCursor(centroPorcentaje - (int16_t)w / 2, 99);
+  gfx->print(porcentaje);
 }
 
-// ---------- Brújula circular con puntos cardinales ----------
-void dibujarBrujula(float grados) {
+// ---------- Aguja dinámica de la brújula ----------
+// El aro, el mapa, las marcas y las letras cardinales están en el bitmap.
+void dibujarAguja(float grados) {
   const Paleta &p = paletaActual();
   const int16_t cx = COMPASS_X;
-  const int16_t cy = 55;
-  const int16_t radio = 39;
+  const int16_t cy = COMPASS_Y;
 
-  // Círculo y marcas
-  gfx->drawCircle(cx, cy, radio, p.acento);
-  gfx->drawCircle(cx, cy, 40, p.acento);
-  for (int i = 0; i < 16; i++) {
-    float aMarca = i * 22.5f * PI / 180.0f;
-    bool principal = (i % 4 == 0);
-    int16_t r1 = principal ? 32 : 34;
-    int16_t r2 = radio - 2;
-    int16_t x1 = cx + (int16_t)round(r1 * sin(aMarca));
-    int16_t y1 = cy - (int16_t)round(r1 * cos(aMarca));
-    int16_t x2 = cx + (int16_t)round(r2 * sin(aMarca));
-    int16_t y2 = cy - (int16_t)round(r2 * cos(aMarca));
-    gfx->drawLine(x1, y1, x2, y2, p.acento);
-  }
-
-  // Cardinales colocados dentro del aro
-  textoCentrado("N",  cx,      31, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("NE", cx + 19, 43, &FreeSans9pt7b, p.texto);
-  textoCentrado("E",  cx + 30, 61, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("SE", cx + 19, 79, &FreeSans9pt7b, p.texto);
-  textoCentrado("S",  cx,      90, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("SO", cx - 19, 79, &FreeSans9pt7b, p.texto);
-  textoCentrado("O",  cx - 30, 61, &FreeSansBold9pt7b, p.texto);
-  textoCentrado("NO", cx - 19, 43, &FreeSans9pt7b, p.texto);
-
-  // Aguja orientada al rumbo
   float a = grados * PI / 180.0f;
   float dx = sin(a);
   float dy = -cos(a);
   float px = -dy;
   float py = dx;
 
-  const float largoPunta = 28.0f;
-  const float largoCola = 20.0f;
-  const float ancho = 3.8f;
+  const float largoPunta = 33.0f;
+  const float largoCola = 23.0f;
+  const float ancho = 5.0f;
 
   int16_t puntaX = cx + (int16_t)round(largoPunta * dx);
   int16_t puntaY = cy + (int16_t)round(largoPunta * dy);
@@ -284,46 +190,33 @@ void dibujarBrujula(float grados) {
   int16_t cola1Y = cy + (int16_t)round(ancho * py);
   int16_t cola2X = cx - (int16_t)round(ancho * px);
   int16_t cola2Y = cy - (int16_t)round(ancho * py);
-  gfx->fillTriangle(colaX, colaY, cola1X, cola1Y, cola2X, cola2Y, p.agujaSecundaria);
+  gfx->fillTriangle(colaX, colaY, cola1X, cola1Y, cola2X, cola2Y,
+                    p.agujaSecundaria);
 
-  // Eje central
-  gfx->fillCircle(cx, cy, 4, p.fondo);
-  gfx->drawCircle(cx, cy, 4, p.texto);
+  // Pequeño eje central de la aguja, sin tapar una zona grande del mapa.
   gfx->fillCircle(cx, cy, 2, p.agujaSecundaria);
-
-  // Debajo de la brújula: solo los grados
-  char gradosTexto[8];
-  snprintf(gradosTexto, sizeof(gradosTexto), "%03d", ((int)round(grados) % 360 + 360) % 360);
-  char lectura[10];
-  snprintf(lectura, sizeof(lectura), "%s", gradosTexto);
-  textoCentrado(lectura, cx, 119, &FreeSans12pt7b, p.acento);
-
-  // Símbolo de grados
-  int16_t bx, by;
-  uint16_t bw, bh;
-  gfx->setFont(&FreeSansBold12pt7b);
-  gfx->getTextBounds(lectura, 0, 0, &bx, &by, &bw, &bh);
-  int16_t xGrados = cx + bw / 2 + 6;
-  gfx->drawCircle(xGrados, 104, 2, p.acento);
+  gfx->drawCircle(cx, cy, 5, p.texto);
+  gfx->drawCircle(cx, cy, 4, p.texto);
 }
 
 // ---------- Interfaz ----------
+// Se repinta el bitmap antes de dibujar los valores para borrar las lecturas
+// anteriores y evitar restos al cambiar temperatura, humedad o rumbo.
 void dibujarInterfaz() {
-  const Paleta &p = paletaActual();
-  gfx->fillScreen(p.fondo);
+  gfx->draw16bitRGBBitmap(
+    0, 0,
+    fondo,
+    FONDO_WIDTH,
+    FONDO_HEIGHT
+  );
 
-  // Separadores verticales
-  gfx->drawLine(142, 19, 142, 123, p.acento);
-  gfx->drawLine(286, 19, 286, 123, p.acento);
+  dibujarTemperatura(EXT_X, tempExterior, 4); // el 0 es la posicion de º de exterior en x
+  dibujarTemperatura(INT_X, tempInterior, 2); // el 0 es la posicion de º de interior en x
 
-  // Títulos con línea horizontal interrumpida por el propio texto,
-  // como en el diseño de referencia.
-  dibujarTituloConLineas("EXTERIOR", EXT_X, 33, 10, 134, p.acento);
-  dibujarTituloConLineas("INTERIOR", INT_X, 33, 294, 418, p.acento);
+  dibujarHumedad(EXT_X, humedadExterior, true);
+  dibujarHumedad(INT_X, humedadInterior, false);
 
-  dibujarBloqueTemperatura(EXT_X, tempExterior, humedadExterior, "EXTERIOR");
-  dibujarBloqueTemperatura(INT_X, tempInterior, humedadInterior, "INTERIOR");
-  dibujarBrujula(rumbo);
+  dibujarAguja(rumbo);
 }
 
 // ---------- BLE: conexión ----------
